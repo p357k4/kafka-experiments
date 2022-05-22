@@ -1,36 +1,45 @@
 package finance.redivivus;
 
+import finance.redivivus.domain.Bought;
+import finance.redivivus.domain.Command;
+import finance.redivivus.domain.WalletEntry;
+import finance.redivivus.serdes.CustomDeserializer;
+import finance.redivivus.serdes.CustomSerializer;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.Topology;
-import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.kstream.KTable;
-import org.apache.kafka.streams.kstream.Produced;
+import org.apache.kafka.streams.kstream.*;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.Properties;
-import java.util.regex.Pattern;
+import java.util.concurrent.ExecutionException;
 
 public class ExperimentsMain {
-    static final String inputTopic = "topic-input";
-    static final String outputTopic = "topic-output";
+    static final String inputTopic = "topic-bought";
+    static final String commandTopic = "topic-command";
+    static final String outputTopic = "topic-wallet";
+
+    static final String portfolioTopic = "topic-portfolio";
 
     public static void main(String[] args) {
-        final String bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
+        final var bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
 
         // Configure the Streams application.
-        final Properties streamsConfiguration = getStreamsConfiguration(bootstrapServers);
+        final var streamsConfiguration = getStreamsConfiguration(bootstrapServers);
 
         // Define the processing topology of the Streams application.
-        final StreamsBuilder builder = new StreamsBuilder();
+        final var builder = new StreamsBuilder();
         createWordCountStream(builder);
-        final KafkaStreams streams = new KafkaStreams(builder.build(), streamsConfiguration);
+        final var streams = new KafkaStreams(builder.build(), streamsConfiguration);
 
         // Always (and unconditionally) clean local state prior to starting the processing topology.
         // We opt for this unconditional call here because this will make it easier for you to play around with the example
@@ -79,29 +88,58 @@ public class ExperimentsMain {
     }
 
     static void createWordCountStream(final StreamsBuilder builder) {
-        // Construct a `KStream` from the input topic "streams-plaintext-input", where message values
-        // represent lines of text (for the sake of this example, we ignore whatever may be stored
-        // in the message keys).  The default key and value serdes will be used.
-        final KStream<String, String> textLines = builder.stream(inputTopic);
+        final var orders = builder
+                .stream(
+                        inputTopic,
+                        Consumed.with(
+                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Bought.class))
+                        )
+                );
 
-        final Pattern pattern = Pattern.compile("\\W+", Pattern.UNICODE_CHARACTER_CLASS);
-
-        final KTable<String, Long> wordCounts = textLines
-                // Split each text line, by whitespace, into words.  The text lines are the record
-                // values, i.e. we can ignore whatever data is in the record keys and thus invoke
-                // `flatMapValues()` instead of the more generic `flatMap()`.
-                .flatMapValues(value ->
-                        Arrays.asList(pattern.split(value.toLowerCase()))
+        final var commands = builder
+                .stream(
+                        commandTopic,
+                        Consumed.with(
+                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Command.class))
+                        )
                 )
-                // Group the split data by word so that we can subsequently count the occurrences per word.
-                // This step re-keys (re-partitions) the input data, with the new record key being the words.
-                // Note: No need to specify explicit serdes because the resulting key and value types
-                // (String and String) match the application's default serdes.
-                .groupBy((keyIgnored, word) -> word)
-                // Count the occurrences of each word (record key).
-                .count();
+                .map((keyNotUsed, v) -> new KeyValue<>(v.ticker, v));
 
-        // Write the `KTable<String, Long>` to the output topic.
-        wordCounts.toStream().to(outputTopic, Produced.with(Serdes.String(), Serdes.Long()));
+        final var kTable = orders
+                .map((keyNotUsed, v) -> new KeyValue<>(v.ticker, v))
+                .groupByKey()
+                .aggregate(
+                        () -> new WalletEntry("", 0L),
+                        (key, value, aggregate) -> new WalletEntry(key, aggregate.qty + value.qty),
+                        Materialized.with(
+                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(WalletEntry.class))
+                        )
+                );
+
+        final var join = commands
+                .join(kTable, ((value1, value2) -> value2));
+
+        join
+                .to(
+                        portfolioTopic,
+                        Produced.with(
+                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(WalletEntry.class))
+                        )
+                );
+
+        final var kStream = kTable.toStream();
+
+        kStream
+                .to(
+                        outputTopic,
+                        Produced.with(
+                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(WalletEntry.class))
+                        )
+                );
     }
 }
