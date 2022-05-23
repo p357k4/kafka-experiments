@@ -109,7 +109,12 @@ public class ExperimentsMain {
 
         final var kTable = orders
                 .map((keyNotUsed, v) -> new KeyValue<>(v.ticker, v))
-                .groupByKey()
+                .groupByKey(
+                        Grouped.with(
+                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Bought.class))
+                        )
+                )
                 .aggregate(
                         () -> new WalletEntry("", 0L),
                         (key, value, aggregate) -> new WalletEntry(key, aggregate.qty + value.qty),
@@ -120,7 +125,15 @@ public class ExperimentsMain {
                 );
 
         final var join = commands
-                .join(kTable, ((value1, value2) -> value2));
+                .join(
+                        kTable,
+                        (value1, value2) -> value2,
+                        Joined.with(
+                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Command.class)),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(WalletEntry.class))
+                        )
+                );
 
         join
                 .to(
