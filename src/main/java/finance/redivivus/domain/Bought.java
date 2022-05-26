@@ -4,13 +4,13 @@ import java.util.Objects;
 
 public final class Bought {
     public final String ticker;
-    public final Long qty;
+    public final Quantity qty;
 
     public Bought() {
         this(null, null);
     }
 
-    public Bought(String ticker, Long qty) {
+    public Bought(String ticker, Quantity qty) {
         this.ticker = ticker;
         this.qty = qty;
     }

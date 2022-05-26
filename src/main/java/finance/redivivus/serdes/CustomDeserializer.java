@@ -1,8 +1,8 @@
 package finance.redivivus.serdes;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
-import org.codehaus.jackson.map.ObjectMapper;
 
 public class CustomDeserializer<T> implements Deserializer<T> {
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -22,7 +22,8 @@ public class CustomDeserializer<T> implements Deserializer<T> {
             System.out.println("Deserializing...");
             return objectMapper.readValue(data, tClass);
         } catch (Exception e) {
-            throw new SerializationException("Error when deserializing byte[] to MessageDto");
+            //throw new SerializationException("Error when deserializing byte[] to " + tClass.getName(), e);
+            return null;
         }
     }
 

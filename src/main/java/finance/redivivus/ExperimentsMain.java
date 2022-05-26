@@ -1,13 +1,8 @@
 package finance.redivivus;
 
-import finance.redivivus.domain.Bought;
-import finance.redivivus.domain.Command;
-import finance.redivivus.domain.WalletEntry;
+import finance.redivivus.domain.*;
 import finance.redivivus.serdes.CustomDeserializer;
 import finance.redivivus.serdes.CustomSerializer;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
@@ -19,16 +14,15 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collections;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
 
 public class ExperimentsMain {
-    static final String inputTopic = "topic-bought";
-    static final String commandTopic = "topic-command";
-    static final String outputTopic = "topic-wallet";
-
-    static final String portfolioTopic = "topic-portfolio";
+    static final String topicBought = "topic-bought";
+    static final String topicSold = "topic-sold";
+    static final String topicDelta = "topic-delta";
+    static final String topicCommand = "topic-command";
+    static final String topicWallet = "topic-wallet";
+    static final String topicPortfolio = "topic-portfolio";
 
     public static void main(String[] args) {
         final var bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
@@ -39,7 +33,8 @@ public class ExperimentsMain {
         // Define the processing topology of the Streams application.
         final var builder = new StreamsBuilder();
         createWordCountStream(builder);
-        final var streams = new KafkaStreams(builder.build(), streamsConfiguration);
+        final var topology = builder.build();
+        final var streams = new KafkaStreams(topology, streamsConfiguration);
 
         // Always (and unconditionally) clean local state prior to starting the processing topology.
         // We opt for this unconditional call here because this will make it easier for you to play around with the example
@@ -52,6 +47,8 @@ public class ExperimentsMain {
         // is truly needed, i.e., only under certain conditions (e.g., the presence of a command line flag for your app).
         // See `ApplicationResetExample.java` for a production-like example.
         streams.cleanUp();
+
+        System.out.println(topology.describe());
 
         // Now run the processing topology via `start()` to begin processing its input data.
         streams.start();
@@ -88,70 +85,96 @@ public class ExperimentsMain {
     }
 
     static void createWordCountStream(final StreamsBuilder builder) {
-        final var orders = builder
+        final var streamBought = builder
                 .stream(
-                        inputTopic,
+                        topicBought,
                         Consumed.with(
                                 Serdes.String(),
                                 Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Bought.class))
                         )
                 );
 
-        final var commands = builder
+        final var streamSold = builder
                 .stream(
-                        commandTopic,
+                        topicSold,
+                        Consumed.with(
+                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Sold.class))
+                        )
+                );
+
+        final var streamCommands = builder
+                .stream(
+                        topicCommand,
                         Consumed.with(
                                 Serdes.String(),
                                 Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Command.class))
                         )
                 )
-                .map((keyNotUsed, v) -> new KeyValue<>(v.ticker, v));
+                .map((keyNotUsed, v) -> new KeyValue<>(new Instrument(v.ticker), v));
 
-        final var kTable = orders
-                .map((keyNotUsed, v) -> new KeyValue<>(v.ticker, v))
+        final var streamBoughtDelta = streamBought
+                .filter((keyNotUsed, v) -> v != null)
+                .map((keyNotUsed, v) -> new KeyValue<>(new Instrument(v.ticker), v.qty));
+
+        final var streamSoldDelta = streamSold
+                .map((keyNotUsed, v) -> new KeyValue<>(new Instrument(v.ticker), new Quantity(v.qty.value)));
+
+        final var streamDelta = streamBoughtDelta.merge(streamSoldDelta);
+
+        streamDelta
+                .to(
+                        topicDelta,
+                        Produced.with(
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
+                        )
+                );
+
+
+        final var tableWallet = streamDelta
                 .groupByKey(
                         Grouped.with(
-                                Serdes.String(),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Bought.class))
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
                         )
                 )
-                .aggregate(
-                        () -> new WalletEntry("", 0L),
-                        (key, value, aggregate) -> new WalletEntry(key, aggregate.qty + value.qty),
+                .reduce(
+                        (qty1, qty2) -> new Quantity(qty1.value + qty2.value),
                         Materialized.with(
-                                Serdes.String(),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(WalletEntry.class))
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
                         )
                 );
 
-        final var join = commands
+        final var streamPortfolio = streamCommands
                 .join(
-                        kTable,
-                        (value1, value2) -> value2,
+                        tableWallet,
+                        (key, value1, value2) -> value2,
                         Joined.with(
-                                Serdes.String(),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
                                 Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Command.class)),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(WalletEntry.class))
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
                         )
                 );
 
-        join
+        streamPortfolio
                 .to(
-                        portfolioTopic,
+                        topicPortfolio,
                         Produced.with(
-                                Serdes.String(),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(WalletEntry.class))
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
                         )
                 );
 
-        final var kStream = kTable.toStream();
+        final var streamWallet = tableWallet.toStream();
 
-        kStream
+        streamWallet
                 .to(
-                        outputTopic,
+                        topicWallet,
                         Produced.with(
-                                Serdes.String(),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(WalletEntry.class))
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
+                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
                         )
                 );
     }
