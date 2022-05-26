@@ -1,0 +1,1 @@
+bin/kafka-console-consumer.sh --topic topic-delta --from-beginning --bootstrap-server localhost:9092 --property print.key=true --property value.deserializer=org.apache.kafka.common.serialization.StringDeserializer
