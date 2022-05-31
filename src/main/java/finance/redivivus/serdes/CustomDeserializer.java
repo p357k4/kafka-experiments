@@ -22,7 +22,7 @@ public class CustomDeserializer<T> implements Deserializer<T> {
             System.out.println("Deserializing...");
             return objectMapper.readValue(data, tClass);
         } catch (Exception e) {
-            //throw new SerializationException("Error when deserializing byte[] to " + tClass.getName(), e);
+            //throw new SerializationException("Error when deserializing byte[] instrumentTo " + tClass.getName(), e);
             return null;
         }
     }

@@ -36,24 +36,24 @@ public class ExperimentsMain {
         final var topology = builder.build();
         final var streams = new KafkaStreams(topology, streamsConfiguration);
 
-        // Always (and unconditionally) clean local state prior to starting the processing topology.
-        // We opt for this unconditional call here because this will make it easier for you to play around with the example
+        // Always (and unconditionally) clean local state prior instrumentTo starting the processing topology.
+        // We opt for this unconditional call here because this will make it easier for you instrumentTo play around with the example
         // when resetting the application for doing a re-run (via the Application Reset Tool,
         // https://docs.confluent.io/platform/current/streams/developer-guide/app-reset-tool.html).
         //
         // The drawback of cleaning up local state prior is that your app must rebuilt its local state from scratch, which
         // will take time and will require reading all the state-relevant data from the Kafka cluster over the network.
-        // Thus in a production scenario you typically do not want to clean up always as we do here but rather only when it
+        // Thus in a production scenario you typically do not want instrumentTo clean up always as we do here but rather only when it
         // is truly needed, i.e., only under certain conditions (e.g., the presence of a command line flag for your app).
         // See `ApplicationResetExample.java` for a production-like example.
         streams.cleanUp();
 
         System.out.println(topology.describe());
 
-        // Now run the processing topology via `start()` to begin processing its input data.
+        // Now run the processing topology via `start()` instrumentTo begin processing its input data.
         streams.start();
 
-        // Add shutdown hook to respond to SIGTERM and gracefully close the Streams application.
+        // Add shutdown hook instrumentTo respond instrumentTo SIGTERM and gracefully close the Streams application.
         Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
     }
 
@@ -63,13 +63,13 @@ public class ExperimentsMain {
         // against which the application is run.
         streamsConfiguration.put(StreamsConfig.APPLICATION_ID_CONFIG, "experiments-example");
         streamsConfiguration.put(StreamsConfig.CLIENT_ID_CONFIG, "experiments-example-client");
-        // Where to find Kafka broker(s).
+        // Where instrumentTo find Kafka broker(s).
         streamsConfiguration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         // Specify default (de)serializers for record keys and for record values.
         streamsConfiguration.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
         streamsConfiguration.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName());
         // Records should be flushed every 10 seconds. This is less than the default
-        // in order to keep this example interactive.
+        // in order instrumentTo keep this example interactive.
         streamsConfiguration.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 10 * 1000);
         // For illustrative purposes we disable record caches.
         streamsConfiguration.put(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, 0);
