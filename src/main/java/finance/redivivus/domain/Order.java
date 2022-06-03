@@ -1,4 +1,4 @@
 package finance.redivivus.domain;
 
-public record Order(Instrument debit, Instrument credit, Long qtyDebit, Long qtyCredit) {
+public record Order(OrderState state, Instrument instrumentDebit, Instrument instrumentCredit, Quantity qtyDebit, Quantity qtyCredit) {
 }

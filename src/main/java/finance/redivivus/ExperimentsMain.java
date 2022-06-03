@@ -3,6 +3,7 @@ package finance.redivivus;
 import finance.redivivus.domain.*;
 import finance.redivivus.serdes.CustomDeserializer;
 import finance.redivivus.serdes.CustomSerializer;
+import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
@@ -17,12 +18,14 @@ import java.nio.file.Paths;
 import java.util.Properties;
 
 public class ExperimentsMain {
-    static final String topicBought = "topic-bought";
-    static final String topicSold = "topic-sold";
-    static final String topicDelta = "topic-delta";
-    static final String topicCommand = "topic-command";
-    static final String topicWallet = "topic-wallet";
+    static final String topicProcessed = "topic-processed";
+    static final String topicSubmitted = "topic-submitted";
     static final String topicPortfolio = "topic-portfolio";
+
+    static Serde<Instrument> serdeInstrument = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class));
+    static Serde<Quantity> serdeQuantity = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class));
+    static Serde<Order> serdeOrder = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Order.class));
+    static Serde<BookEntry> serdeBookEntry = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(BookEntry.class));
 
     public static void main(String[] args) {
         final var bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
@@ -85,97 +88,56 @@ public class ExperimentsMain {
     }
 
     static void createWordCountStream(final StreamsBuilder builder) {
-        final var streamBought = builder
-                .stream(
-                        topicBought,
-                        Consumed.with(
-                                Serdes.String(),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Bought.class))
-                        )
+        final var streamSubmitted = builder
+                .stream(topicSubmitted, Consumed.with(Serdes.String(), serdeOrder))
+                .filter((keyNotUsed, v) -> v != null, Named.as("filter-non-empty"))
+                .selectKey((key, value) -> value.instrumentCredit());
+
+        final var streamProcessed = builder
+                .stream(topicProcessed, Consumed.with(Serdes.String(), serdeOrder))
+                .selectKey((key, value) -> value.instrumentDebit());
+
+        final var streamOrder = streamProcessed.merge(streamSubmitted);
+
+        final var tablePortfolio = streamOrder
+                .groupByKey(Grouped.with(serdeInstrument, serdeOrder))
+                .aggregate(
+                        () -> new BookEntry(null, new Quantity(0L), null),
+                        (key, value, aggregate) ->
+                                switch (value.state()) {
+                                    case SUBMITTED -> new BookEntry(
+                                            key,
+                                            new Quantity(aggregate.qty().value - value.qtyDebit().value),
+                                            value
+                                    );
+
+                                    case PROCESSED -> new BookEntry(
+                                            key,
+                                            new Quantity(aggregate.qty().value + value.qtyCredit().value),
+                                            value
+                                    );
+                                }
+                        ,
+                        Named.as("reduce-operations-into-state"),
+                        Materialized.with(serdeInstrument, serdeBookEntry)
                 );
 
-        final var streamSold = builder
-                .stream(
-                        topicSold,
-                        Consumed.with(
-                                Serdes.String(),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Sold.class))
-                        )
-                );
+//        final var streamPortfolio = streamCommands
+//                .join(
+//                        tableWallet,
+//                        (key, value1, value2) -> value2,
+//                        Joined.with(
+//                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
+//                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Command.class)),
+//                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
+//                        )
+//                );
 
-        final var streamCommands = builder
-                .stream(
-                        topicCommand,
-                        Consumed.with(
-                                Serdes.String(),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Command.class))
-                        )
-                )
-                .map((keyNotUsed, v) -> new KeyValue<>(new Instrument(v.ticker), v));
-
-        final var streamBoughtDelta = streamBought
-                .filter((keyNotUsed, v) -> v != null)
-                .map((keyNotUsed, v) -> new KeyValue<>(new Instrument(v.ticker), v.qty));
-
-        final var streamSoldDelta = streamSold
-                .map((keyNotUsed, v) -> new KeyValue<>(new Instrument(v.ticker), new Quantity(v.qty.value)));
-
-        final var streamDelta = streamBoughtDelta.merge(streamSoldDelta);
-
-        streamDelta
-                .to(
-                        topicDelta,
-                        Produced.with(
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
-                        )
-                );
-
-
-        final var tableWallet = streamDelta
-                .groupByKey(
-                        Grouped.with(
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
-                        )
-                )
-                .reduce(
-                        (qty1, qty2) -> new Quantity(qty1.value + qty2.value),
-                        Materialized.with(
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
-                        )
-                );
-
-        final var streamPortfolio = streamCommands
-                .join(
-                        tableWallet,
-                        (key, value1, value2) -> value2,
-                        Joined.with(
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Command.class)),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
-                        )
-                );
-
-        streamPortfolio
+        tablePortfolio
+                .toStream()
                 .to(
                         topicPortfolio,
-                        Produced.with(
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
-                        )
-                );
-
-        final var streamWallet = tableWallet.toStream();
-
-        streamWallet
-                .to(
-                        topicWallet,
-                        Produced.with(
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class)),
-                                Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class))
-                        )
+                        Produced.with(serdeInstrument, serdeBookEntry)
                 );
     }
 }
