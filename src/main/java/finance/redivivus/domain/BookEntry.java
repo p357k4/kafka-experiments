@@ -1,4 +1,4 @@
 package finance.redivivus.domain;
 
-public record BookEntry(Instrument instrument, Quantity qty, Order last) {
+public record BookEntry(Quantity qty, Order last) {
 }

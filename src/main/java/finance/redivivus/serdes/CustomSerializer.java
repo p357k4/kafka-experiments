@@ -14,7 +14,6 @@ public class CustomSerializer<T> implements Serializer<T> {
                 System.out.println("Null received at serializing");
                 return null;
             }
-            System.out.println("Serializing...");
             return objectMapper.writeValueAsBytes(data);
         } catch (Exception e) {
             throw new SerializationException("Error when serializing MessageDto instrumentTo byte[]", e);

@@ -6,7 +6,6 @@ import finance.redivivus.serdes.CustomSerializer;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
-import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.*;
@@ -18,14 +17,14 @@ import java.nio.file.Paths;
 import java.util.Properties;
 
 public class ExperimentsMain {
-    static final String topicProcessed = "topic-processed";
-    static final String topicSubmitted = "topic-submitted";
-    static final String topicPortfolio = "topic-portfolio";
+    public static final String topicProcessed = "topic-processed";
+    public static final String topicSubmitted = "topic-submitted";
+    public static final String topicPortfolio = "topic-portfolio";
 
-    static Serde<Instrument> serdeInstrument = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class));
-    static Serde<Quantity> serdeQuantity = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class));
-    static Serde<Order> serdeOrder = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Order.class));
-    static Serde<BookEntry> serdeBookEntry = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(BookEntry.class));
+    public static Serde<Instrument> serdeInstrument = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class));
+    public static Serde<Quantity> serdeQuantity = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class));
+    public static Serde<Order> serdeOrder = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Order.class));
+    public static Serde<BookEntry> serdeBookEntry = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(BookEntry.class));
 
     public static void main(String[] args) {
         final var bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
@@ -35,7 +34,7 @@ public class ExperimentsMain {
 
         // Define the processing topology of the Streams application.
         final var builder = new StreamsBuilder();
-        createWordCountStream(builder);
+        createStream(builder);
         final var topology = builder.build();
         final var streams = new KafkaStreams(topology, streamsConfiguration);
 
@@ -87,33 +86,31 @@ public class ExperimentsMain {
         return streamsConfiguration;
     }
 
-    static void createWordCountStream(final StreamsBuilder builder) {
+    static void createStream(final StreamsBuilder builder) {
         final var streamSubmitted = builder
                 .stream(topicSubmitted, Consumed.with(Serdes.String(), serdeOrder))
                 .filter((keyNotUsed, v) -> v != null, Named.as("filter-non-empty"))
-                .selectKey((key, value) -> value.instrumentCredit());
+                .selectKey((key, value) -> value.credit());
 
         final var streamProcessed = builder
                 .stream(topicProcessed, Consumed.with(Serdes.String(), serdeOrder))
-                .selectKey((key, value) -> value.instrumentDebit());
+                .selectKey((key, value) -> value.debit());
 
         final var streamOrder = streamProcessed.merge(streamSubmitted);
 
         final var tablePortfolio = streamOrder
                 .groupByKey(Grouped.with(serdeInstrument, serdeOrder))
                 .aggregate(
-                        () -> new BookEntry(null, new Quantity(0L), null),
+                        () -> new BookEntry(new Quantity(0L), null),
                         (key, value, aggregate) ->
                                 switch (value.state()) {
                                     case SUBMITTED -> new BookEntry(
-                                            key,
-                                            new Quantity(aggregate.qty().value - value.qtyDebit().value),
+                                            new Quantity(aggregate.qty().value() - value.qtyCredit().value()),
                                             value
                                     );
 
                                     case PROCESSED -> new BookEntry(
-                                            key,
-                                            new Quantity(aggregate.qty().value + value.qtyCredit().value),
+                                            new Quantity(aggregate.qty().value() + value.qtyDebit().value()),
                                             value
                                     );
                                 }
