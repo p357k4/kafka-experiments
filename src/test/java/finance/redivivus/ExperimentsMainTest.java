@@ -1,9 +1,6 @@
 package finance.redivivus;
 
-import finance.redivivus.domain.Instruments;
-import finance.redivivus.domain.Order;
-import finance.redivivus.domain.OrderState;
-import finance.redivivus.domain.Quantity;
+import finance.redivivus.domain.*;
 import finance.redivivus.serdes.CustomSerializer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
@@ -62,20 +59,16 @@ class ExperimentsMainTest {
                     new Quantity(0L)
             );
 
-            Order orderBuy = new Order(
-                    OrderState.SUBMITTED,
+            Order orderBuy = Orders.buy(
                     Instruments.stock1,
                     new Quantity(1L),
-                    Instruments.cash,
-                    new Quantity(10L)
+                    10L
             );
 
-            Order orderSell = new Order(
-                    OrderState.SUBMITTED,
-                    Instruments.cash,
-                    new Quantity(30L),
+            Order orderSell = Orders.sell(
                     Instruments.stock1,
-                    new Quantity(5L)
+                    new Quantity(5L),
+                    30L
             );
 
             topicProcessed.pipeInput("whatever", orderSold);
