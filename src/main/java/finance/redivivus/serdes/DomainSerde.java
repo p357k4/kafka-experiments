@@ -11,6 +11,6 @@ public class DomainSerde {
     public static Serde<Order> serdeOrder = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Order.class));
     public static Serde<BookEntry> serdeBookEntry = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(BookEntry.class));
     public static Serde<OrderSet> serdeOrderSet = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(OrderSet.class));
-    public static Serde<OrderPair> serdeOrderPair = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(OrderPair.class));
+    public static Serde<InstrumentPair> serdeInstrumentPair = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(InstrumentPair.class));
 
 }

@@ -1,12 +1,10 @@
 package finance.redivivus;
 
 import finance.redivivus.domain.*;
-import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 import static finance.redivivus.serdes.DomainSerde.*;
 
@@ -38,23 +36,28 @@ public class ExperimentsMatchingEngine {
 
         final var aggregated = streamNotProcessed
                 .groupBy(
-                        (k, v) -> new OrderPair(v.debit(), v.credit()),
-                        Grouped.with(serdeOrderPair, serdeOrder))
+                        (k, v) -> {
+                            if (v.debit().equals(Instruments.cash)) {
+                                return new InstrumentPair(v.credit(), v.debit());
+                            } else {
+                                return new InstrumentPair(v.debit(), v.credit());
+                            }
+                        },
+                        Grouped.with(serdeInstrumentPair, serdeOrder))
                 .aggregate(
-                        () -> new OrderSet(Set.of()),
+                        () -> new OrderSet(new TreeSet<>(Comparator.comparingLong(order -> order.qtyDebit().value()))),
                         (key, value, aggregate) -> {
-                            final var orders = new HashSet<>(Set.copyOf(aggregate.orders()));
-                            orders.add(value);
-                            return new OrderSet(orders);
+                            aggregate.orders().add(value);
+                            return aggregate;
                         },
                         Named.as("order-matching"),
-                        Materialized.with(serdeOrderPair, serdeOrderSet)
+                        Materialized.with(serdeInstrumentPair, serdeOrderSet)
                 );
 
         aggregated
                 .toStream()
                 .selectKey((k, v) -> k.from())
-                .mapValues(value -> value.orders().stream().findAny().get())
+                .mapValues(value -> value.orders().stream().findFirst().get())
                 .to(topicProcessed, Produced.with(serdeInstrument, serdeOrder));
 
         aggregated

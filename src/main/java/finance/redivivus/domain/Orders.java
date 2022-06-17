@@ -1,6 +1,6 @@
 package finance.redivivus.domain;
 
-public class Orders {
+public abstract class Orders {
     public static Order buy(Identifier identifier, Instrument stock, Quantity qtyStock, long bid) {
         return new Order(
                 identifier,

@@ -1,6 +1,7 @@
 package finance.redivivus.domain;
 
+import java.util.Collection;
 import java.util.Set;
 
-public record OrderSet(Set<Order> orders) {
+public record OrderSet(Collection<Order> orders) {
 }
