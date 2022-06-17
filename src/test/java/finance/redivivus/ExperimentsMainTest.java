@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Properties;
 
+import static finance.redivivus.serdes.DomainSerde.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ExperimentsMainTest {
@@ -34,24 +35,25 @@ class ExperimentsMainTest {
                     .createInputTopic(
                             ExperimentsMain.topicProcessed,
                             Serdes.String().serializer(),
-                            ExperimentsMain.serdeOrder.serializer()
+                            serdeOrder.serializer()
                     );
 
             final var topicSubmitted = testDriver
                     .createInputTopic(
                             ExperimentsMain.topicSubmitted,
                             Serdes.String().serializer(),
-                            ExperimentsMain.serdeOrder.serializer()
+                            serdeOrder.serializer()
                     );
 
             final var topicPortfolio = testDriver
                     .createOutputTopic(
                             ExperimentsMain.topicPortfolio,
-                            ExperimentsMain.serdeInstrument.deserializer(),
-                            ExperimentsMain.serdeBookEntry.deserializer()
+                            serdeInstrument.deserializer(),
+                            serdeBookEntry.deserializer()
                     );
 
             Order orderSold = new Order(
+                    Identifiers.random(),
                     OrderState.PROCESSED,
                     Instruments.cash,
                     new Quantity(100L),
@@ -60,12 +62,14 @@ class ExperimentsMainTest {
             );
 
             Order orderBuy = Orders.buy(
+                    Identifiers.random(),
                     Instruments.stock1,
                     new Quantity(1L),
                     10L
             );
 
             Order orderSell = Orders.sell(
+                    Identifiers.random(),
                     Instruments.stock1,
                     new Quantity(5L),
                     30L
@@ -79,7 +83,7 @@ class ExperimentsMainTest {
             final var record2 = topicPortfolio.readKeyValue();
             final var record3 = topicPortfolio.readKeyValue();
 
-            final var so = new String(ExperimentsMain.serdeOrder.serializer().serialize("", orderSold));
+            final var so = new String(serdeOrder.serializer().serialize("", orderSold));
         }
     }
 }

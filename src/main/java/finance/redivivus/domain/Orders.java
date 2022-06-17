@@ -1,8 +1,9 @@
 package finance.redivivus.domain;
 
 public class Orders {
-    public static Order buy(Instrument stock, Quantity qtyStock, long bid) {
+    public static Order buy(Identifier identifier, Instrument stock, Quantity qtyStock, long bid) {
         return new Order(
+                identifier,
                 OrderState.SUBMITTED,
                 stock,
                 qtyStock,
@@ -11,8 +12,9 @@ public class Orders {
         );
     }
 
-    public static Order sell(Instrument stock, Quantity qtyStock, long ask) {
+    public static Order sell(Identifier identifier, Instrument stock, Quantity qtyStock, long ask) {
         return new Order(
+                identifier,
                 OrderState.SUBMITTED,
                 Instruments.cash,
                 new Quantity(ask),

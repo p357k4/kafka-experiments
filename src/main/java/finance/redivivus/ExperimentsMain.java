@@ -16,15 +16,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
 
+import static finance.redivivus.serdes.DomainSerde.*;
+
 public class ExperimentsMain {
     public static final String topicProcessed = "topic-processed";
     public static final String topicSubmitted = "topic-submitted";
     public static final String topicPortfolio = "topic-portfolio";
-
-    public static Serde<Instrument> serdeInstrument = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Instrument.class));
-    public static Serde<Quantity> serdeQuantity = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Quantity.class));
-    public static Serde<Order> serdeOrder = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(Order.class));
-    public static Serde<BookEntry> serdeBookEntry = Serdes.serdeFrom(new CustomSerializer<>(), new CustomDeserializer<>(BookEntry.class));
 
     public static void main(String[] args) {
         final var bootstrapServers = args.length > 0 ? args[0] : "localhost:9092";
