@@ -87,11 +87,11 @@ public class ExperimentsMain {
         final var streamSubmitted = builder
                 .stream(topicSubmitted, Consumed.with(Serdes.String(), serdeOrder))
                 .filter((keyNotUsed, v) -> v != null, Named.as("filter-non-empty"))
-                .selectKey((key, value) -> value.credit());
+                .selectKey((key, value) -> value.credit().instrument());
 
         final var streamProcessed = builder
                 .stream(topicProcessed, Consumed.with(Serdes.String(), serdeOrder))
-                .selectKey((key, value) -> value.debit());
+                .selectKey((key, value) -> value.debit().instrument());
 
         final var streamOrder = streamProcessed.merge(streamSubmitted);
 
@@ -102,12 +102,12 @@ public class ExperimentsMain {
                         (key, value, aggregate) ->
                                 switch (value.state()) {
                                     case SUBMITTED -> new BookEntry(
-                                            new Quantity(aggregate.qty().value() - value.qtyCredit().value()),
+                                            new Quantity(aggregate.qty().value() - value.credit().quantity().value()),
                                             value
                                     );
 
                                     case PROCESSED -> new BookEntry(
-                                            new Quantity(aggregate.qty().value() + value.qtyDebit().value()),
+                                            new Quantity(aggregate.qty().value() + value.debit().quantity().value()),
                                             value
                                     );
                                 }

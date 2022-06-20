@@ -1,6 +1,7 @@
 package finance.redivivus;
 
 import finance.redivivus.domain.*;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
 
@@ -20,8 +21,9 @@ public class ExperimentsMatchingEngine {
         final var streamProcessed = builder
                 .stream(topicProcessed, Consumed.with(serdeIdentifier, serdeOrder));
 
-        final var tableProcessed = streamProcessed.toTable();
-        final var streamNotProcessed = streamInstrument
+        final var tableProcessed = streamProcessed.toTable(Materialized.with(serdeIdentifier, serdeOrder));
+        final var tableInstrument = streamInstrument.toTable(Materialized.with(serdeIdentifier, serdeOrder));
+        final var tableNotProcessed = tableInstrument
                 .leftJoin(
                         tableProcessed,
                         (value1, value2) -> {
@@ -31,34 +33,43 @@ public class ExperimentsMatchingEngine {
                                 return value1;
                             }
                         },
-                        Joined.with(serdeIdentifier, serdeOrder, serdeOrder)
+                        Materialized.with(serdeIdentifier, serdeOrder)
                 );
 
-        final var aggregated = streamNotProcessed
+        final var aggregated = tableNotProcessed
                 .groupBy(
                         (k, v) -> {
-                            if (v.debit().equals(Instruments.cash)) {
-                                return new InstrumentPair(v.credit(), v.debit());
+                            if (v.debit().instrument().equals(Instruments.cash)) {
+                                return KeyValue.pair(new InstrumentPair(v.credit().instrument(), v.debit().instrument()), v);
                             } else {
-                                return new InstrumentPair(v.debit(), v.credit());
+                                return KeyValue.pair(new InstrumentPair(v.debit().instrument(), v.credit().instrument()), v);
                             }
                         },
                         Grouped.with(serdeInstrumentPair, serdeOrder))
                 .aggregate(
-                        () -> new OrderSet(new TreeSet<>(Comparator.comparingLong(order -> order.qtyDebit().value()))),
+                        () -> new OrderSet(new TreeSet<>(Comparator.comparingLong(order -> order.debit().quantity().value()))),
                         (key, value, aggregate) -> {
                             aggregate.orders().add(value);
+                            return aggregate;
+                        },
+                        (key, value, aggregate) -> {
+                            aggregate.orders().remove(value);
                             return aggregate;
                         },
                         Named.as("order-matching"),
                         Materialized.with(serdeInstrumentPair, serdeOrderSet)
                 );
 
-        aggregated
+        final var kStream = aggregated
                 .toStream()
-                .selectKey((k, v) -> k.from())
                 .mapValues(value -> value.orders().stream().findFirst().get())
-                .to(topicProcessed, Produced.with(serdeInstrument, serdeOrder));
+                .selectKey((k, v) -> v.identifier());
+
+        kStream
+                .print(Printed.toSysOut());
+
+        kStream
+                .to(topicProcessed, Produced.with(serdeIdentifier, serdeOrder));
 
         aggregated
                 .toStream()

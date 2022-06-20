@@ -55,10 +55,8 @@ class ExperimentsMainTest {
             Order orderSold = new Order(
                     Identifiers.random(),
                     OrderState.PROCESSED,
-                    Instruments.cash,
-                    new Quantity(100L),
-                    Instruments.cash,
-                    new Quantity(0L)
+                    new Offer(Instruments.cash, new Quantity(100L)),
+                    new Offer(Instruments.cash, new Quantity(0L))
             );
 
             Order orderBuy = Orders.buy(

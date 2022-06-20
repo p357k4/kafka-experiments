@@ -5,10 +5,8 @@ public abstract class Orders {
         return new Order(
                 identifier,
                 OrderState.SUBMITTED,
-                stock,
-                qtyStock,
-                Instruments.cash,
-                new Quantity(bid)
+                new Offer(stock, qtyStock),
+                new Offer(Instruments.cash, new Quantity(bid))
         );
     }
 
@@ -16,10 +14,8 @@ public abstract class Orders {
         return new Order(
                 identifier,
                 OrderState.SUBMITTED,
-                Instruments.cash,
-                new Quantity(ask),
-                stock,
-                qtyStock
+                new Offer(Instruments.cash, new Quantity(ask)),
+                new Offer(stock, qtyStock)
         );
     }
 }
